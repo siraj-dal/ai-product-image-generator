@@ -6,6 +6,7 @@ import { SceneEditor } from "@/components/scene-editor"
 import { OutputControls } from "@/components/output-controls"
 import { StylePresets } from "@/components/style-presets"
 import { UploadSection } from "@/components/upload-section"
+import { TryOnSection } from "@/components/tryon-section"
 import { TensorFlowLoader } from "@/components/tensorflow-loader"
 import { ModelTuningPanel } from "@/components/model-tuning-panel"
 import { ImageComparison } from "@/components/image-comparison"
@@ -39,8 +40,8 @@ export default function ImageGenerator() {
   const [backgroundRemoved, setBackgroundRemoved] = useState(false)
   const [autoCrop, setAutoCrop] = useState(true)
   const [activeTab, setActiveTab] = useState<
-    "upload" | "editor" | "tuning" | "presets" | "export" | "settings" | "prompts"
-  >("upload")
+    "tryon" | "upload" | "editor" | "tuning" | "presets" | "export" | "settings" | "prompts"
+  >("tryon")
   const [resolution, setResolution] = useState<"512x512" | "1024x1024">("512x512")
   const [backgroundType, setBackgroundType] = useState<"studio" | "lifestyle">("studio")
   const [brightness, setBrightness] = useState(50)
@@ -79,7 +80,17 @@ export default function ImageGenerator() {
 
     // If no API key is saved, show the API key dialog
     if (!savedKey) {
-      setShowApiKeyDialog(true)
+      // Show the dialog after a short delay to allow the UI to render first
+      const timer = setTimeout(() => {
+        setShowApiKeyDialog(true)
+        toast({
+          title: "API Key Required",
+          description: "Please configure your Hugging Face API key to use all features.",
+          variant: "default",
+        })
+      }, 1000)
+      
+      return () => clearTimeout(timer)
     }
   }, [])
 
@@ -90,7 +101,11 @@ export default function ImageGenerator() {
         // Dynamically import TensorFlow.js and related packages
         const tf = await import("@tensorflow/tfjs")
         await import("@tensorflow/tfjs-backend-webgl")
-        await tf.setBackend("webgl")
+        
+        // Check if backend is already registered to prevent duplicate registration
+        if (!tf.findBackend("webgl")) {
+          await tf.setBackend("webgl")
+        }
 
         // Load BodyPix separately and handle errors
         try {
@@ -261,7 +276,15 @@ export default function ImageGenerator() {
       setShowApiKeyDialog(false)
       toast({
         title: "API key validated",
-        description: "Your Hugging Face API key has been validated and saved.",
+        description: "Your Hugging Face API key has been validated and saved. All features are now available.",
+        variant: "success",
+      })
+    } else {
+      // Keep dialog open but show a toast with guidance
+      toast({
+        title: "API key validation failed",
+        description: "Please check your API key or try using the Mock Generator which doesn't require an API key.",
+        variant: "destructive",
       })
     }
   }
@@ -501,13 +524,16 @@ export default function ImageGenerator() {
                       </div>
 
                       <div
-                        className={`border rounded-md p-3 cursor-pointer hover:border-primary transition-colors ${generationModel === IMAGE_GENERATION_MODELS.MOCK ? "border-primary bg-primary/10" : ""}`}
+                        className={`border rounded-md p-3 cursor-pointer hover:border-primary transition-colors ${generationModel === IMAGE_GENERATION_MODELS.MOCK ? "border-primary bg-primary/10" : "border-green-200 bg-green-50"}`}
                         onClick={() => setGenerationModel(IMAGE_GENERATION_MODELS.MOCK)}
                       >
                         <div className="flex justify-between items-center">
                           <div>
-                            <p className="font-medium">Mock Generator (Testing)</p>
-                            <p className="text-xs text-muted-foreground">For testing without API calls</p>
+                            <div className="flex items-center">
+                              <p className="font-medium">Mock Generator</p>
+                              <span className="ml-2 px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">No API Key Required</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground">Works without Hugging Face API key - perfect for testing</p>
                           </div>
                           {generationModel === IMAGE_GENERATION_MODELS.MOCK && (
                             <div className="h-3 w-3 rounded-full bg-primary"></div>
@@ -524,6 +550,7 @@ export default function ImageGenerator() {
               <MessageSquare className="h-4 w-4 mr-2" />
               Prompts
             </Button>
+            
 
             <Dialog>
               <DialogTrigger asChild>
@@ -573,9 +600,14 @@ export default function ImageGenerator() {
               </DialogContent>
             </Dialog>
 
-            <Button variant={isApiKeyValid ? "outline" : "default"} size="sm" onClick={() => setShowApiKeyDialog(true)}>
-              <Key className="h-4 w-4 mr-2" />
-              {isApiKeyValid ? "API Key" : "Set API Key"}
+            <Button 
+              variant={isApiKeyValid ? "outline" : "default"} 
+              size="sm" 
+              onClick={() => setShowApiKeyDialog(true)}
+              className={isApiKeyValid ? "border-green-500 text-green-600" : "bg-amber-500 hover:bg-amber-600"}
+            >
+              <Key className={`h-4 w-4 mr-2 ${isApiKeyValid ? "text-green-600" : ""}`} />
+              {isApiKeyValid ? "API Key (Valid)" : "Set API Key"}
             </Button>
 
             <Dialog>
@@ -607,6 +639,7 @@ export default function ImageGenerator() {
         <main className="flex-1 overflow-auto">
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="container py-4">
             <TabsList>
+            <TabsTrigger value="tryon">Try On</TabsTrigger>
               <TabsTrigger value="upload">Upload Product</TabsTrigger>
               <TabsTrigger value="editor" disabled={!productImage}>
                 Scene Editor
@@ -620,6 +653,22 @@ export default function ImageGenerator() {
               <TabsTrigger value="settings">Settings</TabsTrigger>
             </TabsList>
 
+            <TabsContent value="tryon" className="mt-4">
+              <TryOnSection
+                onUploadComplete={handleUploadComplete}
+                backgroundRemoved={backgroundRemoved}
+                setBackgroundRemoved={setBackgroundRemoved}
+                autoCrop={autoCrop}
+                setAutoCrop={setAutoCrop}
+                modelSettings={modelSettings}
+                onPromptChange={handlePromptChange}
+                productName={productName}
+                backgroundType={backgroundType}
+                brightness={brightness}
+                contrast={contrast}
+              />
+            </TabsContent>
+            
             <TabsContent value="upload" className="mt-4">
               <UploadSection
                 onUploadComplete={handleUploadComplete}

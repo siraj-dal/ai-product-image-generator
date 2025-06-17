@@ -199,8 +199,38 @@ Make the product the focal point of the image. Photorealistic style, high qualit
 // Function to validate the Hugging Face API key
 export async function validateHuggingFaceApiKey(apiKey: string): Promise<{ valid: boolean; message: string }> {
   try {
-    // Make a simple request to check if the API key is valid
-    const response = await fetch("https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5", {
+    // First, verify the API key format
+    if (!apiKey || apiKey.trim() === '') {
+      return { valid: false, message: "API key cannot be empty. Please enter a valid Hugging Face API key." }
+    }
+
+    // Check if the API key follows the expected format (typically starts with 'hf_')
+    if (!apiKey.startsWith('hf_')) {
+      return { 
+        valid: false, 
+        message: "Invalid API key format. Hugging Face API keys typically start with 'hf_'. Please check your key." 
+      }
+    }
+
+    // Make a request to the Hugging Face user info endpoint to verify the key
+    const userInfoResponse = await fetch("https://huggingface.co/api/whoami-v2", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+
+    // If we can get user info, the key is definitely valid
+    if (userInfoResponse.ok) {
+      const userData = await userInfoResponse.json()
+      return { 
+        valid: true, 
+        message: `API key is valid. Connected to Hugging Face account: ${userData.name || userData.username || 'User'}` 
+      }
+    }
+
+    // If user info fails, try the model API as fallback
+    const modelResponse = await fetch("https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -217,29 +247,29 @@ export async function validateHuggingFaceApiKey(apiKey: string): Promise<{ valid
     })
 
     // Check for specific error codes
-    if (response.status === 401 || response.status === 403) {
-      return { valid: false, message: "Invalid API key. Please check your Hugging Face API key." }
+    if (modelResponse.status === 401 || modelResponse.status === 403) {
+      return { valid: false, message: "Invalid API key. Please check your Hugging Face API key or generate a new one." }
     }
 
-    if (response.status === 429) {
+    if (modelResponse.status === 429) {
       return { valid: true, message: "API key is valid, but you've reached the rate limit. Try again later." }
     }
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
+    if (!modelResponse.ok) {
+      const errorData = await modelResponse.json().catch(() => ({}))
       return {
         valid: false,
-        message: `API error: ${errorData.error || response.statusText}`,
+        message: `API error: ${errorData.error || modelResponse.statusText}. Please try again or generate a new key.`,
       }
     }
 
     // If we get here, the key is valid
-    return { valid: true, message: "API key is valid" }
+    return { valid: true, message: "API key is valid and ready to use with image generation models." }
   } catch (error) {
     console.error("Error validating Hugging Face API key:", error)
     return {
       valid: false,
-      message: `Error validating API key: ${error instanceof Error ? error.message : String(error)}`,
+      message: `Error validating API key: ${error instanceof Error ? error.message : String(error)}. Please check your internet connection and try again.`,
     }
   }
 }

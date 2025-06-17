@@ -39,10 +39,13 @@ export async function initTensorFlow(config?: Partial<PerformanceConfig>): Promi
 
   // Configure TensorFlow.js
   if (performanceConfig.useWebGL) {
-    await tf.setBackend("webgl")
+    // Check if backend is already registered to prevent duplicate registration
+    if (!tf.findBackend("webgl")) {
+      await tf.setBackend("webgl")
+    }
 
     // Configure WebGL backend
-    const gl = await tf.backend().getGPGPUContext().gl
+    const gl = await (tf.backend() as any).getGPGPUContext().gl
     if (gl) {
       // Enable floating point textures
       const ext = gl.getExtension("OES_texture_float")
@@ -57,7 +60,7 @@ export async function initTensorFlow(config?: Partial<PerformanceConfig>): Promi
     }
   } else if (performanceConfig.useWasm) {
     await tf.setBackend("wasm")
-  } else if (performanceConfig.useWebGPU && tf.backend().getBackendName() === "webgpu") {
+  } else if (performanceConfig.useWebGPU && (tf.backend() as any).getBackendName() === "webgpu") {
     await tf.setBackend("webgpu")
   }
 
@@ -117,9 +120,9 @@ export async function loadModel(
     } else if (modelType === "deeplab") {
       progressCallback?.(0.3, "Initializing DeepLab model...")
       modelCache.deeplab = await deeplab.load({
-        base: performanceConfig.precision === "high" ? "pascal" : "atrous_conv",
+        base: performanceConfig.precision === "high" ? "pascal" : "mobilenetv2",
         quantizationBytes: performanceConfig.precision === "high" ? 4 : 2,
-      })
+      } as deeplab.ModelConfig)
       progressCallback?.(1.0, "DeepLab model loaded")
       return modelCache.deeplab
     } else if (modelType === "mobilenet") {
@@ -177,11 +180,16 @@ export async function removeBackground(
     img.crossOrigin = "anonymous"
 
     // Wait for the image to load
-    await new Promise((resolve, reject) => {
-      img.onload = resolve
-      img.onerror = reject
-      img.src = imageUrl
-    })
+    try {
+      await new Promise((resolve, reject) => {
+        img.onload = resolve
+        img.onerror = reject
+        img.src = imageUrl
+      })
+    } catch (error) {
+      console.error("Error loading image:", error)
+      throw new Error("Failed to load image: " + (error instanceof Error ? error.message : String(error)))
+    }
 
     // Run segmentation based on the model type
     progressCallback?.(0.7, "Running segmentation...")
@@ -469,7 +477,7 @@ export async function autoCropImage(
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const i = y * width + x
-        if (mask[i] === 1) {
+        if (mask && mask[i] === 1) {
           minX = Math.min(minX, x)
           minY = Math.min(minY, y)
           maxX = Math.max(maxX, x)
@@ -601,7 +609,7 @@ export function checkWebGLCapabilities(): {
 } {
   try {
     const canvas = document.createElement("canvas")
-    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl")
+    const gl = (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")) as WebGLRenderingContext
 
     if (!gl) {
       return {

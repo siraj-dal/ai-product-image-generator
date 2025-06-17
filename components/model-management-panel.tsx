@@ -13,7 +13,6 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { getAllModelInfo, deleteModel, registerNetworkListeners } from "@/lib/model-management"
-import { getModelStatus, registerServiceWorker } from "@/lib/product-detection"
 import { AlertCircle, Cloud, HardDrive, Upload, Wifi, WifiOff } from "lucide-react"
 
 interface ModelInfo {
@@ -152,6 +151,11 @@ export function ModelManagementPanel() {
   // Get model status
   const modelStatus = getModelStatus()
 
+  const handleTryOn = (modelId: string) => {
+    // Logic to handle the Try-on button click
+    console.log("Try-on clicked for model:", modelId)
+  }
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -227,6 +231,13 @@ export function ModelManagementPanel() {
                         onClick={() => handleDeleteModel(model.id)}
                       >
                         Delete
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleTryOn(model.id)}
+                      >
+                        Try-on
                       </Button>
                     </div>
                   </div>
@@ -316,7 +327,7 @@ export function ModelManagementPanel() {
                   <div className="font-medium">Offline Support</div>
                   <div className="text-sm text-muted-foreground">Enable offline detection with cached models</div>
                 </div>
-                <Badge variant={serviceWorkerRegistered ? "success" : "outline"}>
+                <Badge variant={serviceWorkerRegistered ? "default" : "outline"}>
                   {serviceWorkerRegistered ? "Enabled" : "Disabled"}
                 </Badge>
               </div>
@@ -326,7 +337,7 @@ export function ModelManagementPanel() {
                   <div className="font-medium">Default Model</div>
                   <div className="text-sm text-muted-foreground">MobileNet model for product detection</div>
                 </div>
-                <Badge variant={modelStatus.isLoaded ? "success" : "outline"}>
+                <Badge variant={modelStatus.isLoaded ? "default" : "outline"}>
                   {modelStatus.isLoaded ? "Loaded" : modelStatus.isLoading ? "Loading" : "Not Loaded"}
                 </Badge>
               </div>

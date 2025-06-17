@@ -15,7 +15,11 @@ export function TensorFlowLoader() {
 
         setProgress("Setting up WebGL backend...")
         await import("@tensorflow/tfjs-backend-webgl")
-        await tf.setBackend("webgl")
+        
+        // Check if backend is already registered to prevent duplicate registration
+        if (!tf.findBackend("webgl")) {
+          await tf.setBackend("webgl")
+        }
 
         setProgress("Loading BodyPix model...")
         await import("@tensorflow-models/body-pix")

@@ -328,9 +328,56 @@ export function ProductTypeDetector({ imageUrl, onProductTypeDetected, isVisible
                       <span className="text-sm text-muted-foreground">
                         {Math.round(detectionResult.confidence * 100)}% confidence
                       </span>
-
-I apologize for the confusion. Let me provide the complete implementation for all the suggested features:
-
-First, let's create a model management service to handle offline support and model caching:
-
-\
+                    </>
+                  ) : (
+                    <Badge variant="outline" className="mr-2">Unknown Type</Badge>
+                  )}
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleManualDetection}>
+                Detect Again
+              </Button>
+            </div>
+            
+            {detectionResult.alternativeTypes.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">Alternative Types</h4>
+                <div className="flex flex-wrap gap-2">
+                  {detectionResult.alternativeTypes.map((alt) => (
+                    <Badge 
+                      key={alt.productTypeId}
+                      variant="outline"
+                      className="cursor-pointer hover:bg-accent"
+                      onClick={() => handleSelectAlternative(alt.productTypeId)}
+                    >
+                      {getProductTypeById(alt.productTypeId)?.name || "Unknown"}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        {Math.round(alt.confidence * 100)}%
+                      </span>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="pt-2">
+              <p className="text-sm text-muted-foreground">
+                Detected labels: {detectionResult.detectedLabels.slice(0, 3).join(", ")}
+                {detectionResult.detectedLabels.length > 3 && " and more"}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-6">
+            <Button onClick={handleManualDetection} className="mb-2">
+              Detect Product Type
+            </Button>
+            <p className="text-sm text-muted-foreground text-center">
+              Click to automatically detect the type of product in your image
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}

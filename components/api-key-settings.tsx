@@ -21,6 +21,7 @@ export function ApiKeySettings({ onApiKeyValidated }: ApiKeySettingsProps) {
   const [isValidating, setIsValidating] = useState(false)
   const [validationResult, setValidationResult] = useState<{ valid: boolean; message: string } | null>(null)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [lastValidatedKey, setLastValidatedKey] = useState("")
 
   // Check if we have a saved API key on component mount
   useEffect(() => {
@@ -28,18 +29,25 @@ export function ApiKeySettings({ onApiKeyValidated }: ApiKeySettingsProps) {
     if (savedKey) {
       setSavedApiKey(savedKey)
       setApiKey(savedKey)
+      setLastValidatedKey(savedKey)
       validateApiKey(savedKey)
     }
   }, [])
 
   // Function to validate the API key
   const validateApiKey = async (key: string) => {
+    // Don't revalidate if the key hasn't changed since last validation
+    if (key === lastValidatedKey && validationResult) {
+      return
+    }
+    
     setIsValidating(true)
     setValidationResult(null)
 
     try {
       const result = await validateHuggingFaceApiKey(key)
       setValidationResult(result)
+      setLastValidatedKey(key)
 
       if (result.valid) {
         // Save the valid key to localStorage
@@ -86,30 +94,49 @@ export function ApiKeySettings({ onApiKeyValidated }: ApiKeySettingsProps) {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="api-key">API Key</Label>
+            <div className="flex justify-between items-center">
+              <Label htmlFor="api-key">API Key</Label>
+              {savedApiKey && (
+                <span className="text-xs text-green-600 font-medium flex items-center">
+                  <CheckCircle2 className="h-3 w-3 mr-1" /> Key Saved
+                </span>
+              )}
+            </div>
             <div className="flex space-x-2">
               <Input
                 id="api-key"
                 type={showApiKey ? "text" : "password"}
-                placeholder="Enter your Hugging Face API key"
+                placeholder="Enter your Hugging Face API key (starts with hf_)"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
+                className={validationResult?.valid ? "border-green-500" : ""}
               />
-              <Button type="button" variant="outline" onClick={() => setShowApiKey(!showApiKey)}>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setShowApiKey(!showApiKey)}
+                size="icon"
+                title={showApiKey ? "Hide API Key" : "Show API Key"}
+              >
                 {showApiKey ? "Hide" : "Show"}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Get your API key from{" "}
-              <a
-                href="https://huggingface.co/settings/tokens"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                huggingface.co/settings/tokens
-              </a>
-            </p>
+            <div className="flex justify-between items-center">
+              <p className="text-xs text-muted-foreground">
+                Get your API key from{" "}
+                <a
+                  href="https://huggingface.co/settings/tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  huggingface.co/settings/tokens
+                </a>
+              </p>
+              {apiKey && apiKey !== savedApiKey && (
+                <p className="text-xs text-amber-600">Unsaved changes</p>
+              )}
+            </div>
           </div>
 
           {validationResult && (
@@ -121,7 +148,11 @@ export function ApiKeySettings({ onApiKeyValidated }: ApiKeySettingsProps) {
           )}
 
           <div className="flex space-x-2">
-            <Button type="submit" disabled={isValidating || !apiKey}>
+            <Button 
+              type="submit" 
+              disabled={isValidating || !apiKey}
+              className="flex-1"
+            >
               {isValidating ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -132,7 +163,12 @@ export function ApiKeySettings({ onApiKeyValidated }: ApiKeySettingsProps) {
               )}
             </Button>
             {savedApiKey && (
-              <Button type="button" variant="outline" onClick={handleClear}>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={handleClear}
+                className="flex-1"
+              >
                 Clear API Key
               </Button>
             )}

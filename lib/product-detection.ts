@@ -259,7 +259,7 @@ async function loadDetectionModel(): Promise<tf.LayersModel | tf.GraphModel> {
       version: 2,
       alpha: 0.5,
     })
-    return model.model
+    return model
   } catch (error) {
     console.error("Error loading detection model:", error)
     throw new Error(`Failed to load detection model: ${error instanceof Error ? error.message : String(error)}`)
@@ -407,4 +407,36 @@ export async function detectProductType(imageUrl: string): Promise<ProductDetect
     return {
       productTypeId: bestTypeId,
       confidence: bestConfidence,
-\
+      detectedLabels,
+      alternativeTypes,
+    }
+  } catch (error) {
+    console.error("Error detecting product type:", error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to detect product type: ${errorMessage}`)
+  }
+}
+
+// Get product name suggestion based on detected labels
+export function getProductNameSuggestion(labels: string[]): string {
+  if (labels.length === 0) return ""
+  
+  // Use the first label as the base for the product name
+  const baseLabel = labels[0].split(',')[0].trim()
+  
+  // Capitalize the first letter of each word
+  return baseLabel
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+// Check if model is loaded
+export async function isModelLoaded(): Promise<boolean> {
+  return await modelExists("default-mobilenet-v2")
+}
+
+// Preload product detection model
+export async function preloadProductDetectionModel(): Promise<void> {
+  await cacheDefaultMobileNetModel()
+}
