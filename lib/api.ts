@@ -14,7 +14,7 @@ export const IMAGE_GENERATION_MODELS = {
 // Model endpoints mapping
 const MODEL_ENDPOINTS = {
   [IMAGE_GENERATION_MODELS.STABLE_DIFFUSION]: "runwayml/stable-diffusion-v1-5",
-  [IMAGE_GENERATION_MODELS.STABLE_DIFFUSION_XL]: "stabilityai/stable-diffusion-xl-base-1.0",
+  [IMAGE_GENERATION_MODELS.STABLE_DIFFUSION_XL]: "Stable Diffusion XL",
   [IMAGE_GENERATION_MODELS.PIXART_ALPHA]: "PixArt-alpha/PixArt-XL-2-1024-MS",
   [IMAGE_GENERATION_MODELS.KANDINSKY]: "kandinsky-community/kandinsky-2-2-decoder",
 }
@@ -39,6 +39,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
       params.negativePrompt ||
       "low quality, blurry, distorted, deformed, disfigured, bad anatomy, watermark, logo, text"
 
+    console.log("api_file, generationModel",params.modelType)
     // Select which model to use (defaulting to Stable Diffusion)
     const modelType = params.modelType || IMAGE_GENERATION_MODELS.STABLE_DIFFUSION_XL
 
@@ -85,6 +86,72 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
   }
 }
 
+export async function generateImageFromPrompt(
+  prompt: string,
+  negativePrompt: string = "low quality, blurry, distorted, deformed, disfigured, bad anatomy, watermark, logo, text",
+  modelType: string = IMAGE_GENERATION_MODELS.STABLE_DIFFUSION_XL,
+  resolution: "512x512" | "1024x1024" = "512x512"
+): Promise<string> {
+  try {
+    const apiKey = process.env.HUGGINGFACE_API_KEY || localStorage.getItem("huggingface_api_key")
+    if (!apiKey || apiKey === "hf_dummy_key_for_demo") {
+      console.warn("Using mock generator - no valid Hugging Face API key")
+
+      const mockParams: GenerateImageParams = {
+        productImage: "",
+        backgroundRemoved: false,
+        autoCrop: false,
+        modelSettings: {
+          gender: "female",
+          bodyType: 50,
+          hairstyle: "long-straight",
+          height: 165,
+          skinTone: "#D2B48C",
+        },
+        resolution,
+        backgroundType: "studio",
+        brightness: 50,
+        contrast: 50,
+        modelType,
+        customPrompt: prompt,
+        negativePrompt,
+      }
+
+      const result = getMockGeneratedImage(mockParams, "No valid Hugging Face API key")
+      return result.imageUrl
+    }
+
+    const imageUrl = await generateWithOpenSourceModel(modelType, prompt, negativePrompt, resolution)
+    return imageUrl
+  } catch (error) {
+    console.error("Error in prompt-only image generation:", error)
+
+    const fallbackParams: GenerateImageParams = {
+      productImage: "",
+      backgroundRemoved: false,
+      autoCrop: false,
+      modelSettings: {
+        gender: "female",
+        bodyType: 50,
+        hairstyle: "long-straight",
+        height: 165,
+        skinTone: "#D2B48C",
+      },
+      resolution,
+      backgroundType: "studio",
+      brightness: 50,
+      contrast: 50,
+      modelType,
+      customPrompt: prompt,
+      negativePrompt,
+    }
+
+    const result = getMockGeneratedImage(fallbackParams, "Error fallback")
+    return result.imageUrl
+  }
+}
+
+
 // Function to generate images with different open-source models
 async function generateWithOpenSourceModel(
   modelType: string,
@@ -103,58 +170,85 @@ async function generateWithOpenSourceModel(
 
   // Get API key from environment or localStorage
   const apiKey = process.env.HUGGINGFACE_API_KEY || localStorage.getItem("huggingface_api_key")
-
+  console.log("Model Endpoint is *****",modelEndpoint)
   // Make the API request to Hugging Face
-  const response = await fetch(`https://api-inference.huggingface.co/models/${modelEndpoint}`, {
+  // const response = await fetch(`https://api-inference.huggingface.co/models/${modelEndpoint}`, {
+  //   method: "POST",
+  //   headers: {
+  //     "Content-Type": "application/json",
+  //     Authorization: `Bearer ${apiKey}`,
+  //   },
+  //   body: JSON.stringify({
+  //     inputs: prompt,
+  //     parameters: {
+  //       width: width,
+  //       height: height,
+  //       num_inference_steps: 50,
+  //       guidance_scale: 7.5,
+  //       negative_prompt: negativePrompt,
+  //     },
+  //   }),
+  // })
+  // if (!response.ok) {
+  //   let errorMessage = "Hugging Face API error"
+  //   try {
+  //     const errorData = await response.json()
+  //     errorMessage = `Hugging Face API error: ${errorData.error || JSON.stringify(errorData)}`
+  //   } catch {
+  //     errorMessage = `Hugging Face API error: ${response.status} ${response.statusText}`
+  //   }
+  //   throw new Error(errorMessage)
+  // }
+
+  // // The response is the image blob
+  // const blob = await response.blob()
+  // return URL.createObjectURL(blob)
+  const formData = new FormData();
+  formData.append("prompt",prompt);
+  formData.append("model_choice",modelEndpoint)
+  const response = await fetch("http://localhost:8000/fashion/generate_new", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      inputs: prompt,
-      parameters: {
-        width: width,
-        height: height,
-        num_inference_steps: 50,
-        guidance_scale: 7.5,
-        negative_prompt: negativePrompt,
-      },
-    }),
-  })
-
+    body: formData, // ✅ no need to set headers manually
+  });
   if (!response.ok) {
-    let errorMessage = "Hugging Face API error"
+    let errorMessage = "Image generation API error";
     try {
-      const errorData = await response.json()
-      errorMessage = `Hugging Face API error: ${errorData.error || JSON.stringify(errorData)}`
+      const errorData = await response.json();
+      errorMessage = `API error: ${errorData.error || JSON.stringify(errorData)}`;
     } catch {
-      errorMessage = `Hugging Face API error: ${response.status} ${response.statusText}`
+      errorMessage = `API error: ${response.status} ${response.statusText}`;
     }
-    throw new Error(errorMessage)
+    throw new Error(errorMessage);
   }
+  
+  const data = await response.json();
+  if (!data.result) {
+    throw new Error("Image URL not found in response");
+  }
+  
+  return data.result; // ✅ This is your hosted image URL
 
-  // The response is the image blob
-  const blob = await response.blob()
-  return URL.createObjectURL(blob)
+  
+
+  
 }
 
 // Mock function for testing without API calls
 function getMockGeneratedImage(params: GenerateImageParams, errorMessage?: string): GenerateImageResult {
-  // Create a placeholder image URL based on the parameters
   const { modelSettings, backgroundType, customPrompt } = params
   const gender = modelSettings.gender
   const bodyType = modelSettings.bodyType < 33 ? "petite" : modelSettings.bodyType < 66 ? "average" : "plus-size"
 
-  // Generate a placeholder image with parameters encoded in the query
   let placeholderQuery = customPrompt || `${gender} ${bodyType} model wearing clothes on ${backgroundType} background`
 
-  // If there was an error, include it in the placeholder
   if (errorMessage) {
     placeholderQuery = `Error: ${errorMessage} - ${placeholderQuery}`
   }
 
-  const imageUrl = `/placeholder.svg?height=1024&width=1024&query=${encodeURIComponent(placeholderQuery)}`
+  // ✅ Dynamic resolution support
+  const resolution = params.resolution || "1024x1024"
+  const [width, height] = resolution.split("x").map(Number)
+  const imageUrl = `/placeholder.svg?height=${height}&width=${width}&query=${encodeURIComponent(placeholderQuery)}`
 
   return {
     imageUrl,
@@ -168,6 +262,7 @@ function getMockGeneratedImage(params: GenerateImageParams, errorMessage?: strin
     },
   }
 }
+
 
 // Helper function to create a detailed prompt based on the parameters
 function createPromptFromParams(params: GenerateImageParams, processedImageUrl?: string): string {

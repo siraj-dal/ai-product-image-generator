@@ -30,6 +30,7 @@ import type { ModelSettings, StylePreset } from "@/lib/types"
 import type { SegmentationModel } from "@/lib/image-processing"
 import type { BackgroundOptions } from "@/lib/background-replacement"
 import type { ProductType } from "@/lib/prompt-templates"
+import { string } from "@tensorflow/tfjs-core"
 
 export default function ImageGenerator() {
   const { toast } = useToast()
@@ -56,7 +57,7 @@ export default function ImageGenerator() {
   const [showComparison, setShowComparison] = useState(false)
   const [comparisonFullWidth, setComparisonFullWidth] = useState(false)
   const [originalImage, setOriginalImage] = useState<string | null>(null)
-  const [generationModel, setGenerationModel] = useState(IMAGE_GENERATION_MODELS.STABLE_DIFFUSION_XL)
+  const [generationModel, setGenerationModel] = useState<string | null>(null)
   const [isApiKeyValid, setIsApiKeyValid] = useState(false)
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false)
   const [customPrompt, setCustomPrompt] = useState<string>("")
@@ -200,7 +201,7 @@ export default function ImageGenerator() {
         backgroundType,
         brightness,
         contrast,
-        modelType: generationModel,
+        generationModel,
         customPrompt,
         negativePrompt,
         productType: productType?.id,
@@ -660,6 +661,7 @@ export default function ImageGenerator() {
                 setBackgroundRemoved={setBackgroundRemoved}
                 autoCrop={autoCrop}
                 setAutoCrop={setAutoCrop}
+                modelType={generationModel}
                 modelSettings={modelSettings}
                 onPromptChange={handlePromptChange}
                 productName={productName}

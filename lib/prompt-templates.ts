@@ -92,12 +92,12 @@ export const promptTemplates: PromptTemplate[] = [
     id: "clothing-default",
     productTypeId: "clothing",
     name: "Standard Clothing",
-    template: `Create a professional product image of a {gender} model wearing the uploaded {clothing_type}. 
-The model should have a {body_type} body type, {hairstyle} hair, {height} tall, 
-with skin tone similar to {skin_tone} hex color.
-The image should have a {background} {lighting}.
-Make the {clothing_type} the focal point of the image. Show the fabric texture and details clearly.
-Photorealistic style, high quality, detailed texture, professional fashion photography.`,
+    template: `Create a professional product image of a {gender} model wearing the uploaded {clothing_type}.
+The model should have a {body_type} body type, {hairstyle} hair, {height} tall, with skin tone similar to
+{skin_tone} hex color. The model should be shown from head to waist in a relaxed front-facing pose.
+The image should have a {background} with {lighting}. Make the {clothing_type} the focal point of the image.
+Show the fabric texture and details clearly. Photorealistic style, high quality, detailed texture, professional fashion photography.
+            `,
     negativePrompt: "low quality, blurry, distorted, deformed, disfigured, bad anatomy, watermark, logo, text",
     description: "Standard template for clothing items",
     isDefault: true,

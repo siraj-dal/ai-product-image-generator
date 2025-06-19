@@ -16,36 +16,17 @@ import { ProductTypeDetector } from "@/components/product-type-detector"
 import type { SegmentationModel } from "@/lib/image-processing"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { generateImageFromPrompt } from "@/lib/api"
 import {
-  productTypes,
-  promptTemplates,
-  getTemplatesForProductType,
-  getDefaultTemplateForProductType,
-  fillPromptTemplate,
-  type ProductType,
+  productTypes,  promptTemplates,  getTemplatesForProductType,  getDefaultTemplateForProductType,  fillPromptTemplate,  type ProductType,
 } from "@/lib/prompt-templates"
 import {
-  Shirt,
-  HardDriveIcon as Boot,
-  Watch,
-  Smartphone,
-  Sofa,
-  Sparkles,
-  Dumbbell,
-  Gamepad2,
-  Plus,
-  Copy,
-  RefreshCw,
-  Wand2,
-  Upload,
-  X,
-  Loader2,
-  Trash2,
+  Shirt,  HardDriveIcon as Boot,  Watch,  Smartphone,  Sofa,  Sparkles,  Dumbbell,  Gamepad2,  Plus,  Copy,  RefreshCw,  Wand2,  Upload,  X,  Loader2,  Trash2,
 } from "lucide-react"
 import { formatHeight } from "@/lib/utils"
 import type { ModelSettings } from "@/lib/types"
 
-interface UploadSectionProps {
+interface TryonSectionProps {
   onUploadComplete: (imageUrl: string) => void
   backgroundRemoved: boolean
   setBackgroundRemoved: (value: boolean) => void
@@ -79,10 +60,14 @@ export function TryOnSection({
   productName = "product",
   onPromptChange,
   onProductTypeChange,
-}: UploadSectionProps) {
+}: TryonSectionProps) {
   const { toast } = useToast()
-  const [uploadedImages, setUploadedImages] = useState<{ id: string; url: string; processed?: string }[]>([])
-  const [selectedImageId, setSelectedImageId] = useState<string | null>(null)
+  const [modelImages, setModelImages] = useState<{ id: string; url: string; processed?: string }[]>([])
+  const [selectedModelImageId, setSelectedModelImageId] = useState<string | null>(null)
+  const [garmentImages, setGarmentImages] = useState<{ id: string; url: string; processed?: string }[]>([])
+  const [selectedGarmentImageId, setSelectedGarmentImageId] = useState<string | null>(null)
+  const [resultImages, setResultImages] = useState<{ id: string; url: string; processed?: string }[]>([])
+  const [selectedResultImageId, setSelectedResultImageId] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingProgress, setProcessingProgress] = useState<string | null>(null)
   const [batchProcessing, setBatchProcessing] = useState(false)
@@ -96,6 +81,12 @@ export function TryOnSection({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("")
   const [selectedProductTypeId, setSelectedProductTypeId] = useState<string>("clothing")
   const [productSpecificName, setProductSpecificName] = useState<string>("")
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [modelTab, setModelTab] = useState<"generate" | "upload" | "gallery">("generate")
+  const [garmentTab, setGarmentTab] = useState<"upload" | "gallery">("upload")
+  const [resultTab, setResultTab] = useState<"upload" | "gallery">("upload")
+  const [promptTab, setPromptTab] = useState<"templates" | "custom">("templates")
 
   // Initialize with the default template for the selected product type
   useEffect(() => {
@@ -109,8 +100,8 @@ export function TryOnSection({
     }
   }, [selectedProductTypeId])
 
-  const onDrop = useCallback(
-    async (acceptedFiles: File[]) => {
+  const modelDropzone = useDropzone({
+    onDrop: async (acceptedFiles: File[]) => {
       if (acceptedFiles.length === 0) return
 
       // Process each file
@@ -150,24 +141,112 @@ export function TryOnSection({
       const validImages = newImages.filter(Boolean) as { id: string; url: string; name: string }[]
 
       if (validImages.length > 0) {
-        setUploadedImages((prev) => [...prev, ...validImages])
-
-        // Select the first image if none is selected
-        if (!selectedImageId) {
-          setSelectedImageId(validImages[0].id)
-        }
-
-        // Switch to gallery tab if multiple images were uploaded
-        if (validImages.length > 1) {
-          setParentTab("gallery")
-        }
+        setModelImages((prev) => [...prev, ...validImages])
+        if (!selectedModelImageId) setSelectedModelImageId(validImages[0].id)
       }
     },
-    [toast, selectedImageId],
-  )
+    accept: {
+      "image/*": [".jpeg", ".jpg", ".png", ".webp"],
+    },
+    multiple: true,
+  })
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
+  const garmentDropzone = useDropzone({
+    onDrop: async (acceptedFiles: File[]) => {
+      if (acceptedFiles.length === 0) return
+
+      // Process each file
+      const newImages = await Promise.all(
+        acceptedFiles.map(async (file) => {
+          // Check file type
+          if (!file.type.startsWith("image/")) {
+            toast({
+              title: "Invalid file type",
+              description: `File "${file.name}" is not an image.`,
+              variant: "destructive",
+            })
+            return null
+          }
+
+          // Check file size (max 10MB)
+          if (file.size > 10 * 1024 * 1024) {
+            toast({
+              title: "File too large",
+              description: `File "${file.name}" is larger than 10MB.`,
+              variant: "destructive",
+            })
+            return null
+          }
+
+          // Create a preview URL
+          const imageUrl = URL.createObjectURL(file)
+          return {
+            id: Math.random().toString(36).substring(2, 11),
+            url: imageUrl,
+            name: file.name,
+          }
+        }),
+      )
+
+      // Filter out null values and add to state
+      const validImages = newImages.filter(Boolean) as { id: string; url: string; name: string }[]
+
+      if (validImages.length > 0) {
+        setGarmentImages((prev) => [...prev, ...validImages])
+        if (!selectedGarmentImageId) setSelectedGarmentImageId(validImages[0].id)
+      }
+    },
+    accept: {
+      "image/*": [".jpeg", ".jpg", ".png", ".webp"],
+    },
+    multiple: true,
+  })
+
+  const resultDropzone = useDropzone({
+    onDrop: async (acceptedFiles: File[]) => {
+      if (acceptedFiles.length === 0) return
+
+      // Process each file
+      const newImages = await Promise.all(
+        acceptedFiles.map(async (file) => {
+          // Check file type
+          if (!file.type.startsWith("image/")) {
+            toast({
+              title: "Invalid file type",
+              description: `File "${file.name}" is not an image.`,
+              variant: "destructive",
+            })
+            return null
+          }
+
+          // Check file size (max 10MB)
+          if (file.size > 10 * 1024 * 1024) {
+            toast({
+              title: "File too large",
+              description: `File "${file.name}" is larger than 10MB.`,
+              variant: "destructive",
+            })
+            return null
+          }
+
+          // Create a preview URL
+          const imageUrl = URL.createObjectURL(file)
+          return {
+            id: Math.random().toString(36).substring(2, 11),
+            url: imageUrl,
+            name: file.name,
+          }
+        }),
+      )
+
+      // Filter out null values and add to state
+      const validImages = newImages.filter(Boolean) as { id: string; url: string; name: string }[]
+
+      if (validImages.length > 0) {
+        setResultImages((prev) => [...prev, ...validImages])
+        if (!selectedResultImageId) setSelectedResultImageId(validImages[0].id)
+      }
+    },
     accept: {
       "image/*": [".jpeg", ".jpg", ".png", ".webp"],
     },
@@ -176,15 +255,37 @@ export function TryOnSection({
 
   // When a new image is selected, notify parent component
   useEffect(() => {
-    if (selectedImageId) {
-      const selectedImage = uploadedImages.find((img) => img.id === selectedImageId)
+    if (selectedModelImageId) {
+      const selectedImage = modelImages.find((img) => img.id === selectedModelImageId)
       if (selectedImage?.processed) {
         onUploadComplete(selectedImage.processed)
       } else if (selectedImage) {
-        onUploadComplete(selectedImage.url)
+        // onUploadComplete(selectedImage.url)
       }
     }
-  }, [selectedImageId, uploadedImages, onUploadComplete])
+  }, [selectedModelImageId, modelImages, onUploadComplete])
+
+  useEffect(() => {
+    if (selectedGarmentImageId) {
+      const selectedImage = garmentImages.find((img) => img.id === selectedGarmentImageId)
+      if (selectedImage?.processed) {
+        onUploadComplete(selectedImage.processed)
+      } else if (selectedImage) {
+        // onUploadComplete(selectedImage.url)
+      }
+    }
+  }, [selectedGarmentImageId, garmentImages, onUploadComplete])
+
+  useEffect(() => {
+    if (selectedResultImageId) {
+      const selectedImage = resultImages.find((img) => img.id === selectedResultImageId)
+      if (selectedImage?.processed) {
+        onUploadComplete(selectedImage.processed)
+      } else if (selectedImage) {
+        // onUploadComplete(selectedImage.url)
+      }
+    }
+  }, [selectedResultImageId, resultImages, onUploadComplete])
 
   const handleProcess = async () => {
     if (batchProcessing) {
@@ -195,9 +296,9 @@ export function TryOnSection({
   }
 
   const processSingleImage = async () => {
-    if (!selectedImageId) return
+    if (!selectedModelImageId) return
 
-    const selectedImage = uploadedImages.find((img) => img.id === selectedImageId)
+    const selectedImage = modelImages.find((img) => img.id === selectedModelImageId)
     if (!selectedImage) return
 
     setIsProcessing(true)
@@ -222,8 +323,8 @@ export function TryOnSection({
       })
 
       // Update the processed image in state
-      setUploadedImages((prev) =>
-        prev.map((img) => (img.id === selectedImageId ? { ...img, processed: processedImage } : img)),
+      setModelImages((prev) =>
+        prev.map((img) => (img.id === selectedModelImageId ? { ...img, processed: processedImage } : img)),
       )
 
       onUploadComplete(processedImage)
@@ -246,10 +347,10 @@ export function TryOnSection({
   }
 
   const processBatch = async () => {
-    if (uploadedImages.length === 0) return
+    if (modelImages.length === 0) return
 
     setIsProcessing(true)
-    setBatchProgress({ current: 0, total: uploadedImages.length })
+    setBatchProgress({ current: 0, total: modelImages.length })
     setProcessingProgress("Preparing batch processing...")
 
     try {
@@ -258,10 +359,10 @@ export function TryOnSection({
       await import("@tensorflow/tfjs-backend-webgl")
 
       // Process each image in sequence
-      for (let i = 0; i < uploadedImages.length; i++) {
-        const image = uploadedImages[i]
-        setBatchProgress({ current: i + 1, total: uploadedImages.length })
-        setProcessingProgress(`Processing image ${i + 1} of ${uploadedImages.length}...`)
+      for (let i = 0; i < modelImages.length; i++) {
+        const image = modelImages[i]
+        setBatchProgress({ current: i + 1, total: modelImages.length })
+        setProcessingProgress(`Processing image ${i + 1} of ${modelImages.length}...`)
 
         // Process the image
         const processedImage = await processImage(image.url, {
@@ -271,25 +372,25 @@ export function TryOnSection({
           modelType,
           progressCallback: (progress, message) => {
             setProcessingProgress(
-              `Image ${i + 1}/${uploadedImages.length}: ${message} (${Math.round(progress * 100)}%)`,
+              `Image ${i + 1}/${modelImages.length}: ${message} (${Math.round(progress * 100)}%)`,
             )
           },
         })
 
         // Update the processed image in state
-        setUploadedImages((prev) =>
+        setModelImages((prev) =>
           prev.map((img) => (img.id === image.id ? { ...img, processed: processedImage } : img)),
         )
 
         // If this is the selected image, update the preview
-        if (image.id === selectedImageId) {
+        if (image.id === selectedModelImageId) {
           onUploadComplete(processedImage)
         }
       }
 
       toast({
         title: "Batch processing complete",
-        description: `Processed ${uploadedImages.length} images successfully.`,
+        description: `Processed ${modelImages.length} images successfully.`,
       })
     } catch (error) {
       console.error("Batch processing error:", error)
@@ -306,7 +407,7 @@ export function TryOnSection({
   }
 
   const handleRemoveImage = (id: string) => {
-    const imageToRemove = uploadedImages.find((img) => img.id === id)
+    const imageToRemove = modelImages.find((img) => img.id === id)
     if (imageToRemove) {
       URL.revokeObjectURL(imageToRemove.url)
       if (imageToRemove.processed) {
@@ -314,29 +415,29 @@ export function TryOnSection({
       }
     }
 
-    setUploadedImages((prev) => prev.filter((img) => img.id !== id))
+    setModelImages((prev) => prev.filter((img) => img.id !== id))
 
     // If the removed image was selected, select another one
-    if (id === selectedImageId) {
-      const remainingImages = uploadedImages.filter((img) => img.id !== id)
-      setSelectedImageId(remainingImages.length > 0 ? remainingImages[0].id : null)
+    if (id === selectedModelImageId) {
+      const remainingImages = modelImages.filter((img) => img.id !== id)
+      setSelectedModelImageId(remainingImages.length > 0 ? remainingImages[0].id : null)
     }
   }
 
   const handleRemoveAllImages = () => {
     // Revoke all object URLs
-    uploadedImages.forEach((img) => {
+    modelImages.forEach((img) => {
       URL.revokeObjectURL(img.url)
       if (img.processed) {
         URL.revokeObjectURL(img.processed)
       }
     })
 
-    setUploadedImages([])
-    setSelectedImageId(null)
+    setModelImages([])
+    setSelectedModelImageId(null)
   }
 
-  const selectedImage = selectedImageId ? uploadedImages.find((img) => img.id === selectedImageId) : null
+  const selectedModelImage = selectedModelImageId ? modelImages.find((img) => img.id === selectedModelImageId) : null
 
   // Get the product-specific field name based on the product type
   const getProductFieldName = (productTypeId: string): string => {
@@ -482,175 +583,319 @@ export function TryOnSection({
     navigator.clipboard.writeText(previewPrompt)
   }
 
+  // Add handlers for Garment images
+  const handleRemoveGarmentImage = (id: string) => {
+    const imageToRemove = garmentImages.find((img) => img.id === id)
+    if (imageToRemove) {
+      URL.revokeObjectURL(imageToRemove.url)
+      if (imageToRemove.processed) {
+        URL.revokeObjectURL(imageToRemove.processed)
+      }
+    }
+    setGarmentImages((prev) => prev.filter((img) => img.id !== id))
+    if (id === selectedGarmentImageId) {
+      const remainingImages = garmentImages.filter((img) => img.id !== id)
+      setSelectedGarmentImageId(remainingImages.length > 0 ? remainingImages[0].id : null)
+    }
+  }
+  const handleRemoveAllGarmentImages = () => {
+    garmentImages.forEach((img) => {
+      URL.revokeObjectURL(img.url)
+      if (img.processed) {
+        URL.revokeObjectURL(img.processed)
+      }
+    })
+    setGarmentImages([])
+    setSelectedGarmentImageId(null)
+  }
+  // Add handlers for Result images
+  const handleRemoveResultImage = (id: string) => {
+    const imageToRemove = resultImages.find((img) => img.id === id)
+    if (imageToRemove) {
+      URL.revokeObjectURL(imageToRemove.url)
+      if (imageToRemove.processed) {
+        URL.revokeObjectURL(imageToRemove.processed)
+      }
+    }
+    setResultImages((prev) => prev.filter((img) => img.id !== id))
+    if (id === selectedResultImageId) {
+      const remainingImages = resultImages.filter((img) => img.id !== id)
+      setSelectedResultImageId(remainingImages.length > 0 ? remainingImages[0].id : null)
+    }
+  }
+  const handleRemoveAllResultImages = () => {
+    resultImages.forEach((img) => {
+      URL.revokeObjectURL(img.url)
+      if (img.processed) {
+        URL.revokeObjectURL(img.processed)
+      }
+    })
+    setResultImages([])
+    setSelectedResultImageId(null)
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid gap-6 md:grid-cols-2" style={{ display: 'flex', alignItems: 'space-around', justifyContent: 'space-around' }}>
+      
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-xl  text-left bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent mb-4">
-              Select Model
+            <CardTitle className="text-xl text-left bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent mb-4">
+              {generatedImage ? "Preview Image" : "Select Model"}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="generate" onValueChange={(value) => setParentTab(value as "generate" | "upload" | "gallery")}>
-              <TabsList className="mb-4">
-                <TabsTrigger value="generate">Generate New</TabsTrigger>
-                <TabsTrigger value="upload">Upload Existing</TabsTrigger>
-                <TabsTrigger value="gallery">Gallery</TabsTrigger>
-              </TabsList>
+            <Tabs value={modelTab} onValueChange={(value) => setModelTab(value as any)}>
+              {!generatedImage && (
+                <TabsList className="mb-4">
+                  <TabsTrigger value="generate">Generate New</TabsTrigger>
+                  <TabsTrigger value="upload">Upload Existing</TabsTrigger>
+                  <TabsTrigger value="gallery">Gallery</TabsTrigger>
+                </TabsList>
+              )}
 
               <TabsContent value="generate" className="space-y-4">
-                <Tabs defaultValue="templates" onValueChange={(value) => setChildTab(value as "templates" | "custom")}>
-                  <TabsList className="mb-4">
-                    <TabsTrigger value="templates">Templates</TabsTrigger>
-                    <TabsTrigger value="custom">Custom Prompt</TabsTrigger>
-                  </TabsList>
+                {!generatedImage ? (
+                  <Tabs value={promptTab} onValueChange={(value) => setPromptTab(value as any)}>
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="templates">Templates</TabsTrigger>
+                      <TabsTrigger value="custom">Custom Prompt</TabsTrigger>
+                    </TabsList>
 
-                  <TabsContent value="templates" className="space-y-4">
-                    <ScrollArea className="h-[200px] rounded-md border p-2">
-                      <div className="space-y-2">
-                        {getTemplatesForProductType(selectedProductTypeId).map((template) => (
-                          <div
-                            key={template.id}
-                            className={`p-1 rounded-md cursor-pointer transition-colors ${
-                              selectedTemplateId === template.id
-                                ? "bg-primary/10 border-primary border"
-                                : "border hover:bg-accent"
-                            }`}
-                            onClick={() => handleTemplateChange(template.id)}
-                          >
-                            <div className="flex justify-between items-center">
-                              <h4 className="font-medium">{template.name}</h4>
-                              {template.isDefault && (
-                                <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">Default</span>
+                    <TabsContent value="templates" className="space-y-4">
+                      {/* ScrollArea and prompt config */}
+                      <ScrollArea className="h-[200px] rounded-md border p-2">
+                        <div className="space-y-2">
+                          {getTemplatesForProductType(selectedProductTypeId).map((template) => (
+                            <div
+                              key={template.id}
+                              className={`p-1 rounded-md cursor-pointer transition-colors ${
+                                selectedTemplateId === template.id
+                                  ? "bg-primary/10 border-primary border"
+                                  : "border hover:bg-accent"
+                              }`}
+                              onClick={() => handleTemplateChange(template.id)}
+                            >
+                              <div className="flex justify-between items-center">
+                                <h4 className="font-medium">{template.name}</h4>
+                                {template.isDefault && (
+                                  <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">Default</span>
+                                )}
+                              </div>
+                              {template.description && (
+                                <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
                               )}
                             </div>
-                            {template.description && (
-                              <p className="text-xs text-muted-foreground mt-1">{template.description}</p>
-                            )}
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                      </ScrollArea>
+
+                      {/* Prompt Preview */}
+                      <div className="mt-6 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label>Preview Prompt</Label>
+                          <Button variant="ghost" size="sm" onClick={handleCopyPrompt}>
+                            <Copy className="h-4 w-4 mr-2" />
+                            Copy
+                          </Button>
+                        </div>
+                        <div className="p-3 bg-muted rounded-md text-sm">
+                          <p className="whitespace-pre-wrap">{previewPrompt || "Select a template or customize your prompt to see the preview..."}</p>
+                        </div>
                       </div>
-                    </ScrollArea>
 
-                    <Button onClick={handleCustomizeTemplate} variant="outline" className="w-full">
-                      <Wand2 className="h-4 w-4 mr-2" />
-                      Customize This Template
-                    </Button>
-
-                    {/* Preview Prompt Section */}
-                    <div className="mt-6 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <Label>Preview Prompt</Label>
-                        <Button variant="ghost" size="sm" onClick={handleCopyPrompt}>
-                          <Copy className="h-4 w-4 mr-2" />
-                          Copy
-                        </Button>
-                      </div>
-                      <div className="p-3 bg-muted rounded-md text-sm">
-                        <p className="whitespace-pre-wrap">{previewPrompt || "Select a template or customize your prompt to see the preview..."}</p>
-                      </div>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="custom" className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="custom-prompt">Custom Prompt</Label>
-                      <Textarea
-                        id="custom-prompt"
-                        placeholder="Enter your custom prompt template..."
-                        value={customPrompt}
-                        onChange={(e) => setCustomPrompt(e.target.value)}
-                        className="min-h-[120px]"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Use placeholders like {"{gender}"}, {"{body_type}"}, {"{background}"}, etc. for dynamic values.
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="negative-prompt">Negative Prompt</Label>
-                      <Textarea
-                        id="negative-prompt"
-                        placeholder="Enter negative prompt to avoid unwanted elements..."
-                        value={customNegativePrompt}
-                        onChange={(e) => setCustomNegativePrompt(e.target.value)}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Negative prompts help avoid unwanted elements in the generated image.
-                      </p>
-                    </div>
-
-                    {isCustomizing && (
-                      <Button onClick={handleResetToTemplate} variant="outline" className="w-full">
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Reset to Selected Template
-                      </Button>
-                    )}
-
-                    {/* Preview Prompt Section */}
-                    <div className="mt-6 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <Label>Preview Prompt</Label>
-                        <Button variant="ghost" size="sm" onClick={handleCopyPrompt}>
-                          <Copy className="h-4 w-4 mr-2" />
-                          Copy
-                        </Button>
-                      </div>
-                      <div className="p-3 bg-muted rounded-md text-sm">
-                        <p className="whitespace-pre-wrap">{previewPrompt || "Select a template or customize your prompt to see the preview..."}</p>
-                      </div>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </TabsContent>
-
-              <TabsContent value="upload" className="space-y-4">
-                <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                  <div {...getRootProps()} className="cursor-pointer">
-                    <input {...getInputProps()} />
-                    <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Drag and drop your product image here, or click to select
-                    </p>
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="gallery" className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  {uploadedImages.map((image) => (
-                    <div
-                      key={image.id}
-                      className={`relative rounded-lg overflow-hidden border-2 ${
-                        selectedImageId === image.id ? "border-primary" : "border-transparent"
-                      }`}
-                    >
-                      <img
-                        src={image.url}
-                        alt="Uploaded product"
-                        className="w-full h-32 object-cover"
-                        onClick={() => setSelectedImageId(image.id)}
-                      />
-                      <button
-                        className="absolute top-2 right-2 p-1 bg-background/80 rounded-full hover:bg-background"
-                        onClick={() => handleRemoveImage(image.id)}
+                      {/* Generate Button */}
+                      <Button
+                        onClick={async () => {
+                          if (!previewPrompt || previewPrompt.includes("Select a template")) return
+                          try {
+                            setIsGenerating(true)
+                            const imageUrl = await generateImageFromPrompt(
+                              previewPrompt,
+                              isCustomizing ? customNegativePrompt : undefined,
+                              modelType ?? undefined,
+                              "512x512"
+                            )
+                            const imageId = Math.random().toString(36).substring(2, 11)
+                            setGeneratedImage(imageUrl)
+                          } catch (err) {
+                            console.error(err)
+                            toast({
+                              title: "Generation failed",
+                              description: err instanceof Error ? err.message : "Unknown error.",
+                              variant: "destructive",
+                            })
+                          } finally {
+                            setIsGenerating(false)
+                          }
+                        }}
+                        disabled={!previewPrompt || previewPrompt.includes("Select a template")}
+                        variant="outline"
+                        className="w-full"
                       >
-                        <X className="h-4 w-4" />
-                      </button>
+                        {isGenerating ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" /> Generate AI Model
+                          </>
+                        )}
+                      </Button>
+                    </TabsContent>
+
+                    <TabsContent value="custom" className="space-y-4">
+                      {/* Custom and negative prompt input UI */}
+                      <div className="space-y-2">
+                        <Label htmlFor="custom-prompt">Custom Prompt</Label>
+                        <Textarea
+                          id="custom-prompt"
+                          placeholder="Enter your custom prompt template..."
+                          value={customPrompt}
+                          onChange={(e) => setCustomPrompt(e.target.value)}
+                          className="min-h-[120px]"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use placeholders like {"{gender}"}, {"{body_type}"}, {"{background}"}, etc.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="negative-prompt">Negative Prompt</Label>
+                        <Textarea
+                          id="negative-prompt"
+                          placeholder="Enter negative prompt to avoid unwanted elements..."
+                          value={customNegativePrompt}
+                          onChange={(e) => setCustomNegativePrompt(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Negative prompts help avoid unwanted elements in the generated image.
+                        </p>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                ) : (
+                  <div className="mt-4">
+                    <img src={generatedImage} alt="Generated model" className="rounded-md w-full object-contain" />
+                    <div className="flex justify-center gap-4 mt-2">
+                      <Button
+                        onClick={() => {
+                          const link = document.createElement("a")
+                          link.href = generatedImage
+                          link.download = "ai-model.png"
+                          link.click()
+                        }}
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          toast({ title: "Saved to Gallery!" })
+                          const id = Math.random().toString(36).substring(2, 11)
+                          setModelImages((prev) => [...prev, { id, url: generatedImage }])
+                          setSelectedModelImageId(id)
+                        }}
+                      >
+                        Save to Gallery
+                      </Button>
                     </div>
-                  ))}
-                </div>
-                {uploadedImages.length > 0 && (
-                  <Button variant="outline" onClick={handleRemoveAllImages} className="w-full">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Clear Gallery
-                  </Button>
+                  </div>
                 )}
               </TabsContent>
+
+              {!generatedImage && (
+              <TabsContent value="upload" className="space-y-4">
+                {!(selectedModelImageId && modelImages.length > 0) ? (
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <div {...modelDropzone.getRootProps()} className="cursor-pointer">
+                      <input {...modelDropzone.getInputProps()} />  
+                      <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Drag and drop your product image here, or click to select
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex flex-col items-center">
+                    <img
+                      src={modelImages.find((img) => img.id === selectedModelImageId)?.url}
+                      alt="Selected model"
+                      className="rounded-md w-full object-contain mb-4"
+                    />
+                    <div className="flex justify-center gap-4 mb-4">
+                      <Button
+                        onClick={() => {
+                          const imageUrl = modelImages.find((img) => img.id === selectedModelImageId)?.url
+                          if (!imageUrl) return
+                          const link = document.createElement("a")
+                          link.href = imageUrl
+                          link.download = "uploaded-model.png"
+                          link.click()
+                        }}
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const imageUrl = modelImages.find((img) => img.id === selectedModelImageId)?.url
+                          if (!imageUrl) return
+                          toast({ title: "Saved to Gallery!" })
+                          const id = Math.random().toString(36).substring(2, 11)
+                          setModelImages((prev) => [...prev, { id, url: imageUrl }])
+                          setSelectedModelImageId(id)
+                        }}
+                      >
+                        Save to Gallery
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setSelectedModelImageId(null)}
+                      >
+                        Back
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+              )}
+
+              {!generatedImage && (
+                <TabsContent value="gallery" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {modelImages.map((image) => (
+                      <div
+                        key={image.id}
+                        className={`relative rounded-lg overflow-hidden border-2 ${
+                          selectedModelImageId === image.id ? "border-primary" : "border-transparent"
+                        }`}
+                      >
+                        <img
+                          src={image.url}
+                          alt="Uploaded product"
+                          className="w-full h-32 object-cover"
+                          onClick={() => setSelectedModelImageId(image.id)}
+                        />
+                        <button
+                          className="absolute top-2 right-2 p-1 bg-background/80 rounded-full hover:bg-background"
+                          onClick={() => handleRemoveImage(image.id)}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {modelImages.length > 0 && (
+                    <Button variant="outline" onClick={handleRemoveAllImages} className="w-full">
+                      <Trash2 className="h-4 w-4 mr-2" /> Clear Gallery
+                    </Button>
+                  )}
+                </TabsContent>
+              )}
             </Tabs>
           </CardContent>
-        </Card>
+        </Card> 
+
 
         <Card>
           <CardHeader className="pb-2">
@@ -659,50 +904,93 @@ export function TryOnSection({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="upload" onValueChange={(value) => setParentTab(value as "upload" | "gallery")}>
+          <Tabs value={garmentTab} onValueChange={(value) => setGarmentTab(value as any)}>
+
               <TabsList className="mb-4">
                 <TabsTrigger value="upload">Upload Existing</TabsTrigger>
                 <TabsTrigger value="gallery">Gallery</TabsTrigger>
               </TabsList>
 
               <TabsContent value="upload" className="space-y-4">
-                <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                  <div {...getRootProps()} className="cursor-pointer">
-                    <input {...getInputProps()} />
-                    <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Drag and drop your product image here, or click to select
-                    </p>
+                {!(selectedGarmentImageId && garmentImages.length > 0) ? (
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <div {...garmentDropzone.getRootProps()} className="cursor-pointer">
+                      <input {...garmentDropzone.getInputProps()} />
+                      <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Drag and drop your product image here, or click to select
+                      </p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-4 flex flex-col items-center">
+                    <img
+                      src={garmentImages.find((img) => img.id === selectedGarmentImageId)?.url}
+                      alt="Selected garment"
+                      className="rounded-md w-full object-contain mb-4"
+                    />
+                    <div className="flex justify-center gap-4 mb-4">
+                      <Button
+                        onClick={() => {
+                          const imageUrl = garmentImages.find((img) => img.id === selectedGarmentImageId)?.url
+                          if (!imageUrl) return
+                          const link = document.createElement("a")
+                          link.href = imageUrl
+                          link.download = "uploaded-garment.png"
+                          link.click()
+                        }}
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const imageUrl = garmentImages.find((img) => img.id === selectedGarmentImageId)?.url
+                          if (!imageUrl) return
+                          toast({ title: "Saved to Gallery!" })
+                          const id = Math.random().toString(36).substring(2, 11)
+                          setGarmentImages((prev) => [...prev, { id, url: imageUrl }])
+                          setSelectedGarmentImageId(id)
+                        }}
+                      >
+                        Save to Gallery
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setSelectedGarmentImageId(null)}
+                      >
+                        Back
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="gallery" className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  {uploadedImages.map((image) => (
+                  {garmentImages.map((image) => (
                     <div
                       key={image.id}
                       className={`relative rounded-lg overflow-hidden border-2 ${
-                        selectedImageId === image.id ? "border-primary" : "border-transparent"
+                        selectedGarmentImageId === image.id ? "border-primary" : "border-transparent"
                       }`}
                     >
                       <img
                         src={image.url}
                         alt="Uploaded product"
                         className="w-full h-32 object-cover"
-                        onClick={() => setSelectedImageId(image.id)}
+                        onClick={() => setSelectedGarmentImageId(image.id)}
                       />
                       <button
                         className="absolute top-2 right-2 p-1 bg-background/80 rounded-full hover:bg-background"
-                        onClick={() => handleRemoveImage(image.id)}
+                        onClick={() => handleRemoveGarmentImage(image.id)}
                       >
                         <X className="h-4 w-4" />
                       </button>
                     </div>
                   ))}
                 </div>
-                {uploadedImages.length > 0 && (
-                  <Button variant="outline" onClick={handleRemoveAllImages} className="w-full">
+                {garmentImages.length > 0 && (
+                  <Button variant="outline" onClick={handleRemoveAllGarmentImages} className="w-full">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Clear Gallery
                   </Button>
@@ -719,50 +1007,93 @@ export function TryOnSection({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="upload" onValueChange={(value) => setParentTab(value as "upload" | "gallery")}>
+          <Tabs value={resultTab} onValueChange={(value) => setResultTab(value as any)}>
+
               <TabsList className="mb-4">
                 <TabsTrigger value="upload">Upload Existing</TabsTrigger>
                 <TabsTrigger value="gallery">Gallery</TabsTrigger>
               </TabsList>
 
               <TabsContent value="upload" className="space-y-4">
-                <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                  <div {...getRootProps()} className="cursor-pointer">
-                    <input {...getInputProps()} />
-                    <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Drag and drop your product image here, or click to select
-                    </p>
+                {!(selectedResultImageId && resultImages.length > 0) ? (
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                    <div {...resultDropzone.getRootProps()} className="cursor-pointer">
+                      <input {...resultDropzone.getInputProps()} />
+                      <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        Drag and drop your product image here, or click to select
+                      </p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-4 flex flex-col items-center">
+                    <img
+                      src={resultImages.find((img) => img.id === selectedResultImageId)?.url}
+                      alt="Selected result"
+                      className="rounded-md w-full object-contain mb-4"
+                    />
+                    <div className="flex justify-center gap-4 mb-4">
+                      <Button
+                        onClick={() => {
+                          const imageUrl = resultImages.find((img) => img.id === selectedResultImageId)?.url
+                          if (!imageUrl) return
+                          const link = document.createElement("a")
+                          link.href = imageUrl
+                          link.download = "uploaded-result.png"
+                          link.click()
+                        }}
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const imageUrl = resultImages.find((img) => img.id === selectedResultImageId)?.url
+                          if (!imageUrl) return
+                          toast({ title: "Saved to Gallery!" })
+                          const id = Math.random().toString(36).substring(2, 11)
+                          setResultImages((prev) => [...prev, { id, url: imageUrl }])
+                          setSelectedResultImageId(id)
+                        }}
+                      >
+                        Save to Gallery
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => setSelectedResultImageId(null)}
+                      >
+                        Back
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="gallery" className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  {uploadedImages.map((image) => (
+                  {resultImages.map((image) => (
                     <div
                       key={image.id}
                       className={`relative rounded-lg overflow-hidden border-2 ${
-                        selectedImageId === image.id ? "border-primary" : "border-transparent"
+                        selectedResultImageId === image.id ? "border-primary" : "border-transparent"
                       }`}
                     >
                       <img
                         src={image.url}
                         alt="Uploaded product"
                         className="w-full h-32 object-cover"
-                        onClick={() => setSelectedImageId(image.id)}
+                        onClick={() => setSelectedResultImageId(image.id)}
                       />
                       <button
                         className="absolute top-2 right-2 p-1 bg-background/80 rounded-full hover:bg-background"
-                        onClick={() => handleRemoveImage(image.id)}
+                        onClick={() => handleRemoveResultImage(image.id)}
                       >
                         <X className="h-4 w-4" />
                       </button>
                     </div>
                   ))}
                 </div>
-                {uploadedImages.length > 0 && (
-                  <Button variant="outline" onClick={handleRemoveAllImages} className="w-full">
+                {resultImages.length > 0 && (
+                  <Button variant="outline" onClick={handleRemoveAllResultImages} className="w-full">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Clear Gallery
                   </Button>
